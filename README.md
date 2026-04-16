@@ -11,7 +11,7 @@ Running Claude Code in the background, it's easy to miss when a turn finishes or
 - shows *which* Claude session it's from — project, branch, and a short excerpt of the last assistant message
 - remembers the session GUID so a single global hotkey jumps you back to the right iTerm2 tab/split, even with multiple Claude sessions running
 
-## Screenshot
+## Demo
 
 ![Demo of Claude Code notification overlay](demo.gif)
 
