@@ -35,9 +35,11 @@ Inside Hammerspoon, `claudeNotify` draws a centered `hs.canvas` overlay with:
 - excerpt (dim) — the last thing Claude said
 - hint row — *"⇧⌘J to focus · click to focus"*
 
-The canvas captures mouse clicks and runs `focusItermSession(sid)`, which drives iTerm2 via AppleScript to walk its window/tab/session tree and `select` the session whose `unique id` matches the captured GUID. The canvas also stores the sid in `_lastClaudeSid`, so a global **⇧⌘J** hotkey (bound by Hammerspoon) does the same focus action from any app.
+Multiple notifications queue side-by-side, centered on screen. The most recent (rightmost) panel has a bright orange border; older panels are dimmed. If a new notification arrives for a session that already has a panel, it replaces the existing one instead of duplicating.
 
-Auto-dismisses after 8 seconds if you ignore it.
+Each panel captures mouse clicks and runs `focusItermSession(sid)`, which drives iTerm2 via AppleScript to walk its window/tab/session tree and `select` the session whose `unique id` matches the captured GUID. A global **⇧⌘J** hotkey (bound by Hammerspoon) focuses and dismisses the most recent panel.
+
+Panels persist until you click them or dismiss them with the hotkey — there is no auto-dismiss timeout.
 
 ## Files
 
@@ -46,59 +48,47 @@ Auto-dismisses after 8 seconds if you ignore it.
 | `claude-notify.sh`         | `~/.claude/scripts/claude-notify.sh`  | Hook entry point — parses stdin JSON, builds context, calls Hammerspoon |
 | `focus-iterm-session.sh`   | `~/.claude/scripts/focus-iterm-session.sh` | Standalone AppleScript wrapper to focus an iTerm2 session by GUID    |
 | `init.lua`                 | `~/.hammerspoon/init.lua`             | `claudeNotify` canvas renderer + `focusItermSession` + ⇧⌘J hotkey       |
+| `install.sh`               | (run from repo)                       | Idempotent installer — copies scripts, merges init.lua, wires hooks     |
 
 ## Install
 
-1. **Install Hammerspoon** if you don't have it: `brew install --cask hammerspoon`. Launch it once and grant Accessibility permissions.
-2. **Enable the Hammerspoon CLI** — it's required so shell scripts can send commands to the running Hammerspoon process. `init.lua` already calls `require("hs.ipc")`, but you may need to run `hs -c 'hs.ipc.cliInstall()'` once (or use Hammerspoon's menu: Preferences → Advanced → Install Command Line Tool).
-3. **Copy the scripts into place:**
-   ```bash
-   mkdir -p ~/.claude/scripts
-   cp claude-notify.sh focus-iterm-session.sh ~/.claude/scripts/
-   chmod +x ~/.claude/scripts/claude-notify.sh ~/.claude/scripts/focus-iterm-session.sh
-   cp init.lua ~/.hammerspoon/init.lua   # or merge into your existing init.lua
-   ```
-   Then reload Hammerspoon (menu bar → Reload Config, or restart the app).
-4. **Grant Automation permission** the first time the hotkey/click fires: System Settings → Privacy & Security → Automation → allow Hammerspoon to control iTerm2.
-5. **Wire the hooks** into `~/.claude/settings.json` (merge with whatever is already there):
-   ```json
-   {
-     "hooks": {
-       "Stop": [
-         {
-           "hooks": [
-             {
-               "type": "command",
-               "command": "$HOME/.claude/scripts/claude-notify.sh 'Claude Code' 'Session stopped — click to focus'"
-             }
-           ]
-         }
-       ],
-       "Notification": [
-         {
-           "hooks": [
-             {
-               "type": "command",
-               "command": "$HOME/.claude/scripts/claude-notify.sh 'Claude Code — needs input' 'Permission or input required — click to focus'"
-             }
-           ]
-         }
-       ]
-     }
-   }
-   ```
-6. Restart any running Claude Code sessions (hook changes are picked up on session start).
+### Quick install (recommended)
+
+```bash
+./install.sh
+```
+
+The installer is idempotent (safe to re-run) and will:
+- Copy scripts to `~/.claude/scripts/`
+- Install or append the Hammerspoon config to `~/.hammerspoon/init.lua` (backs up existing files)
+- Merge the required hooks into `~/.claude/settings.json` (backs up existing file)
+- Reload Hammerspoon if it's running
+
+### Prerequisites
+
+- **Hammerspoon** — `brew install --cask hammerspoon`. Launch it once and grant Accessibility permissions.
+- **Hammerspoon CLI (`hs`)** — required so shell scripts can talk to Hammerspoon. Run `hs.ipc.cliInstall()` from Hammerspoon's console, or use Preferences → Advanced → Install Command Line Tool.
+- **jq** — `brew install jq` (used to parse hook stdin JSON).
+
+### Post-install
+
+1. **Grant Automation permission** the first time the hotkey/click fires: System Settings → Privacy & Security → Automation → allow Hammerspoon to control iTerm2.
+2. Restart any running Claude Code sessions (hook changes are picked up on session start).
+
+### Manual install
+
+If you prefer not to use the installer, see the script for the exact steps — it copies two shell scripts, appends a block to `init.lua`, and merges two hook entries into `settings.json`.
 
 ## Usage
 
 Run `claude` inside iTerm2 as normal. When Claude stops or needs input:
 
-- A dark overlay with an orange border appears centered on your main screen.
-- **Click it** → iTerm2 comes forward and focuses the exact tab/split the notification came from.
-- **Press ⇧⌘J from any app** → same thing, no mouse needed.
-- **Ignore it** → auto-dismisses after 8 seconds.
+- A dark overlay with an orange border appears centered on your main screen. Multiple notifications stack side-by-side.
+- **Click a panel** → iTerm2 comes forward and focuses the exact tab/split that notification came from. The panel is dismissed.
+- **Press ⇧⌘J from any app** → focuses and dismisses the most recent (rightmost) panel.
+- Panels **persist until dismissed** — no auto-timeout.
 
-With multiple concurrent Claude sessions (different tabs, splits, windows), each notification captures that specific session's GUID, so the hotkey always jumps to the most-recently-notifying session.
+With multiple concurrent Claude sessions (different tabs, splits, windows), each notification captures that specific session's GUID, so clicking or using the hotkey always jumps to the right session.
 
 ## Customization
 
@@ -106,7 +96,7 @@ With multiple concurrent Claude sessions (different tabs, splits, windows), each
   ```lua
   hs.hotkey.bind({"cmd", "shift"}, "J", function() ... end)
   ```
-- **Auto-dismiss timeout:** change `hs.timer.doAfter(8, dismiss)` in `init.lua`.
+- **Panel size / spacing:** change `PANEL_W`, `PANEL_H`, `PANEL_GAP` at the top of `init.lua`.
 - **Canvas size / colors / font:** all driven by the `c[1]` … `c[7]` element table at the top of `claudeNotify`.
 - **Excerpt length:** change `cut -c1-180` in `claude-notify.sh`.
 - **Subtitle format:** edit the `PROJECT` / `BRANCH` / `SUBTITLE` section in `claude-notify.sh`. Currently it shows `<repo-basename>[/subpath] · <branch>`.
@@ -118,4 +108,3 @@ With multiple concurrent Claude sessions (different tabs, splits, windows), each
 - **macOS only.** The focus mechanism is iTerm2 AppleScript; the overlay is Hammerspoon.
 - **Hammerspoon has to be running.** If it's not, the script silently no-ops. Consider adding Hammerspoon to Login Items.
 - **`hs.canvas` draws at "overlay" level**, which sits above most app windows but below some system UI (e.g. macOS full-screen transitions). Good enough in practice.
-# claude-code-iterm-hammerspoon-notifier
